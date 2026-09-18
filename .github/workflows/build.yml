@@ -7,14 +7,28 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install CEdev
-        uses: CE-Programming/toolchain@master
+      - name: Download CEdev
+        run: |
+          wget -q https://github.com/CE-Programming/toolchain/releases/download/nightly/CEdev-Linux-nightly.tar.gz
+          tar -xzf CEdev-Linux-nightly.tar.gz
 
-      - name: Build
+      - name: Add CEdev to PATH
+        run: |
+          echo "$GITHUB_WORKSPACE/CEdev/bin" >> "$GITHUB_PATH"
+          echo "$GITHUB_WORKSPACE/CEdev/binutils/bin" >> "$GITHUB_PATH"
+
+      - name: Check toolchain
+        run: |
+          cedev-config --version
+          ez80-clang --version
+          ez80-link --version
+
+      - name: Build game
         run: make
 
       - name: Upload 8XP
