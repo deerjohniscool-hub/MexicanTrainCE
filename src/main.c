@@ -15,12 +15,14 @@
 #define TILE_COUNT 91
 #define MAX_HAND 15
 
-typedef struct {
+typedef struct
+{
     uint8_t a;
     uint8_t b;
 } Domino;
 
-typedef struct {
+typedef struct
+{
     Domino hand[MAX_HAND];
     uint8_t count;
 
@@ -60,11 +62,40 @@ static uint8_t doublePlayer = 0;
 
 static uint8_t roundNumber = 1;
 
-/* --------------------------------------------------------- */
-/* Colors                                                    */
-/* --------------------------------------------------------- */
 
-static uint16_t playerColors[MAX_PLAYERS] = {
+/* ========================================================= */
+/* COLORS                                                     */
+/* ========================================================= */
+
+#define COLOR_BG        0
+#define COLOR_PANEL     1
+#define COLOR_PANEL2    2
+#define COLOR_WHITE     3
+#define COLOR_TEXT      4
+#define COLOR_YELLOW    5
+#define COLOR_BLACK     6
+#define COLOR_BORDER    7
+
+#define COLOR_P1        8
+#define COLOR_P2        9
+#define COLOR_P3        10
+#define COLOR_P4        11
+#define COLOR_P5        12
+#define COLOR_P6        13
+#define COLOR_P7        14
+#define COLOR_P8        15
+
+static const uint16_t gamePalette[] =
+{
+    gfx_RGBTo1555(14, 18, 27),
+    gfx_RGBTo1555(27, 34, 48),
+    gfx_RGBTo1555(35, 42, 58),
+    gfx_RGBTo1555(245, 245, 245),
+    gfx_RGBTo1555(205, 210, 220),
+    gfx_RGBTo1555(255, 210, 30),
+    gfx_RGBTo1555(10, 10, 10),
+    gfx_RGBTo1555(75, 85, 105),
+
     gfx_RGBTo1555(40, 170, 255),
     gfx_RGBTo1555(255, 80, 80),
     gfx_RGBTo1555(70, 210, 110),
@@ -75,59 +106,117 @@ static uint16_t playerColors[MAX_PLAYERS] = {
     gfx_RGBTo1555(240, 240, 240)
 };
 
-#define COLOR_BG        gfx_RGBTo1555(14,18,27)
-#define COLOR_PANEL     gfx_RGBTo1555(27,34,48)
-#define COLOR_PANEL2    gfx_RGBTo1555(35,42,58)
-#define COLOR_WHITE     gfx_RGBTo1555(245,245,245)
-#define COLOR_TEXT      gfx_RGBTo1555(205,210,220)
-#define COLOR_YELLOW    gfx_RGBTo1555(255,210,30)
-#define COLOR_BLACK     gfx_RGBTo1555(10,10,10)
-#define COLOR_BORDER    gfx_RGBTo1555(75,85,105)
+static const uint8_t playerColors[MAX_PLAYERS] =
+{
+    COLOR_P1,
+    COLOR_P2,
+    COLOR_P3,
+    COLOR_P4,
+    COLOR_P5,
+    COLOR_P6,
+    COLOR_P7,
+    COLOR_P8
+};
 
-/* --------------------------------------------------------- */
-/* Simple delay                                               */
-/* --------------------------------------------------------- */
+
+/* ========================================================= */
+/* PALETTE                                                     */
+/* ========================================================= */
+
+static void setupPalette(void)
+{
+    gfx_SetPalette(
+        gamePalette,
+        sizeof(gamePalette),
+        0
+    );
+}
+
+
+/* ========================================================= */
+/* DELAY                                                       */
+/* ========================================================= */
 
 static void wait_ms(unsigned int ms)
 {
     volatile unsigned long i;
 
-    for (i = 0; i < (unsigned long)ms * 3500UL; i++)
+    for (
+        i = 0;
+        i < (unsigned long)ms * 3500UL;
+        i++
+    )
     {
         __asm__("");
     }
 }
 
-/* --------------------------------------------------------- */
-/* Drawing helpers                                             */
-/* --------------------------------------------------------- */
 
-static void fillScreenColor(uint16_t color)
+/* ========================================================= */
+/* DRAWING HELPERS                                             */
+/* ========================================================= */
+
+static void fillScreenColor(uint8_t color)
 {
-    gfx_SetColor(color);
-    gfx_FillScreen();
+    gfx_FillScreen(color);
 }
 
-static void fillRect(int x, int y, int w, int h, uint16_t color)
+
+static void fillRect(
+    int x,
+    int y,
+    int w,
+    int h,
+    uint8_t color
+)
 {
     gfx_SetColor(color);
-    gfx_FillRectangle(x, y, w, h);
+    gfx_FillRectangle(
+        x,
+        y,
+        w,
+        h
+    );
 }
 
-static void drawFrame(int x, int y, int w, int h, uint16_t color)
+
+static void drawFrame(
+    int x,
+    int y,
+    int w,
+    int h,
+    uint8_t color
+)
 {
     gfx_SetColor(color);
-    gfx_Rectangle(x, y, w, h);
+
+    gfx_Rectangle(
+        x,
+        y,
+        w,
+        h
+    );
 }
 
-static void drawText(int x, int y, const char *str, uint16_t color)
+
+static void drawText(
+    int x,
+    int y,
+    const char *str,
+    uint8_t color
+)
 {
     gfx_SetTextFGColor(color);
     gfx_SetTextXY(x, y);
     gfx_PrintString(str);
 }
 
-static void drawCenteredText(int y, const char *str, uint16_t color)
+
+static void drawCenteredText(
+    int y,
+    const char *str,
+    uint8_t color
+)
 {
     int width;
 
@@ -136,17 +225,31 @@ static void drawCenteredText(int y, const char *str, uint16_t color)
     if (width > SCREEN_W)
         width = SCREEN_W;
 
-    drawText((SCREEN_W - width) / 2, y, str, color);
+    drawText(
+        (SCREEN_W - width) / 2,
+        y,
+        str,
+        color
+    );
 }
 
-static void numberString(uint8_t number, char *buffer)
+
+static void numberString(
+    uint8_t number,
+    char *buffer
+)
 {
-    sprintf(buffer, "%u", number);
+    sprintf(
+        buffer,
+        "%u",
+        number
+    );
 }
 
-/* --------------------------------------------------------- */
-/* Domino drawing                                              */
-/* --------------------------------------------------------- */
+
+/* ========================================================= */
+/* DOMINO DRAWING                                              */
+/* ========================================================= */
 
 static void drawDomino(
     int x,
@@ -171,8 +274,21 @@ static void drawDomino(
         );
     }
 
-    fillRect(x, y, w, h, COLOR_WHITE);
-    drawFrame(x, y, w, h, COLOR_BLACK);
+    fillRect(
+        x,
+        y,
+        w,
+        h,
+        COLOR_WHITE
+    );
+
+    drawFrame(
+        x,
+        y,
+        w,
+        h,
+        COLOR_BLACK
+    );
 
     gfx_SetColor(COLOR_BLACK);
 
@@ -183,8 +299,15 @@ static void drawDomino(
         y + h / 2
     );
 
-    numberString(d.a, top);
-    numberString(d.b, bottom);
+    numberString(
+        d.a,
+        top
+    );
+
+    numberString(
+        d.b,
+        bottom
+    );
 
     drawText(
         x + (w - (int)strlen(top) * 6) / 2,
@@ -201,15 +324,16 @@ static void drawDomino(
     );
 }
 
-/* --------------------------------------------------------- */
-/* Train marker                                                */
-/* --------------------------------------------------------- */
+
+/* ========================================================= */
+/* TRAIN MARKER                                                */
+/* ========================================================= */
 
 static void drawTrainMarker(
     int x,
     int y,
     uint8_t end,
-    uint16_t color,
+    uint8_t color,
     bool open,
     uint8_t tileCount
 )
@@ -218,7 +342,12 @@ static void drawTrainMarker(
     char count[5];
 
     gfx_SetColor(color);
-    gfx_FillCircle(x, y, 7);
+
+    gfx_FillCircle(
+        x,
+        y,
+        7
+    );
 
     drawFrame(
         x - 8,
@@ -228,7 +357,10 @@ static void drawTrainMarker(
         COLOR_BLACK
     );
 
-    numberString(end, number);
+    numberString(
+        end,
+        number
+    );
 
     drawText(
         x - ((int)strlen(number) * 3),
@@ -248,7 +380,11 @@ static void drawTrainMarker(
         );
     }
 
-    sprintf(count, "%u", tileCount);
+    sprintf(
+        count,
+        "%u",
+        tileCount
+    );
 
     drawText(
         x - ((int)strlen(count) * 3),
@@ -258,26 +394,37 @@ static void drawTrainMarker(
     );
 }
 
-/* --------------------------------------------------------- */
-/* Build complete double-12 set                               */
-/* --------------------------------------------------------- */
+
+/* ========================================================= */
+/* BUILD DOUBLE-12 SET                                         */
+/* ========================================================= */
 
 static void buildPile(void)
 {
     uint8_t index;
     uint8_t a;
     uint8_t b;
+
     int i;
     int j;
 
     index = 0;
 
-    for (a = 0; a <= 12; a++)
+    for (
+        a = 0;
+        a <= 12;
+        a++
+    )
     {
-        for (b = a; b <= 12; b++)
+        for (
+            b = a;
+            b <= 12;
+            b++
+        )
         {
             drawPile[index].a = a;
             drawPile[index].b = b;
+
             index++;
         }
     }
@@ -285,7 +432,12 @@ static void buildPile(void)
     pileCount = TILE_COUNT;
 
     /* Shuffle */
-    for (i = TILE_COUNT - 1; i > 0; i--)
+
+    for (
+        i = TILE_COUNT - 1;
+        i > 0;
+        i--
+    )
     {
         j = rand() % (i + 1);
 
@@ -299,16 +451,27 @@ static void buildPile(void)
     }
 }
 
-/* --------------------------------------------------------- */
-/* Domino helpers                                              */
-/* --------------------------------------------------------- */
 
-static bool dominoMatches(Domino d, uint8_t end)
+/* ========================================================= */
+/* DOMINO HELPERS                                              */
+/* ========================================================= */
+
+static bool dominoMatches(
+    Domino d,
+    uint8_t end
+)
 {
-    return d.a == end || d.b == end;
+    return (
+        d.a == end ||
+        d.b == end
+    );
 }
 
-static Domino orientDomino(Domino d, uint8_t end)
+
+static Domino orientDomino(
+    Domino d,
+    uint8_t end
+)
 {
     Domino result;
 
@@ -326,14 +489,16 @@ static Domino orientDomino(Domino d, uint8_t end)
     return result;
 }
 
+
 static bool isDouble(Domino d)
 {
     return d.a == d.b;
 }
 
-/* --------------------------------------------------------- */
-/* Deal round                                                  */
-/* --------------------------------------------------------- */
+
+/* ========================================================= */
+/* DEAL ROUND                                                  */
+/* ========================================================= */
 
 static void dealRound(void)
 {
@@ -350,22 +515,38 @@ static void dealRound(void)
     else
         handSize = 10;
 
-    for (i = 0; i < MAX_PLAYERS; i++)
+    for (
+        i = 0;
+        i < MAX_PLAYERS;
+        i++
+    )
     {
         players[i].count = 0;
         players[i].open = false;
         players[i].trainEnd = 12;
 
-        for (j = 0; j < MAX_HAND; j++)
+        for (
+            j = 0;
+            j < MAX_HAND;
+            j++
+        )
         {
             players[i].hand[j].a = 0;
             players[i].hand[j].b = 0;
         }
     }
 
-    for (j = 0; j < handSize; j++)
+    for (
+        j = 0;
+        j < handSize;
+        j++
+    )
     {
-        for (i = 0; i < playerCount; i++)
+        for (
+            i = 0;
+            i < playerCount;
+            i++
+        )
         {
             if (pileCount > 0)
             {
@@ -395,9 +576,10 @@ static void dealRound(void)
     roundOver = false;
 }
 
-/* --------------------------------------------------------- */
-/* Target checking                                             */
-/* --------------------------------------------------------- */
+
+/* ========================================================= */
+/* TARGET CHECKING                                             */
+/* ========================================================= */
 
 static bool canPlayOnTarget(
     Domino d,
@@ -407,6 +589,8 @@ static bool canPlayOnTarget(
 {
     uint8_t otherPlayer;
 
+    /* Own train */
+
     if (target == 0)
     {
         return dominoMatches(
@@ -414,6 +598,8 @@ static bool canPlayOnTarget(
             players[who].trainEnd
         );
     }
+
+    /* Mexican train */
 
     if (target == 1)
     {
@@ -425,6 +611,8 @@ static bool canPlayOnTarget(
             mexicanEnd
         );
     }
+
+    /* Another player's train */
 
     otherPlayer = target - 2;
 
@@ -443,18 +631,29 @@ static bool canPlayOnTarget(
     );
 }
 
-/* --------------------------------------------------------- */
-/* Check if player has any move                                */
-/* --------------------------------------------------------- */
 
-static bool playerHasMove(uint8_t who)
+/* ========================================================= */
+/* PLAYER MOVE CHECK                                           */
+/* ========================================================= */
+
+static bool playerHasMove(
+    uint8_t who
+)
 {
     uint8_t i;
     uint8_t t;
 
-    for (i = 0; i < players[who].count; i++)
+    for (
+        i = 0;
+        i < players[who].count;
+        i++
+    )
     {
-        for (t = 0; t < playerCount + 2; t++)
+        for (
+            t = 0;
+            t < playerCount + 2;
+            t++
+        )
         {
             if (
                 canPlayOnTarget(
@@ -472,9 +671,10 @@ static bool playerHasMove(uint8_t who)
     return false;
 }
 
-/* --------------------------------------------------------- */
-/* Remove domino from hand                                     */
-/* --------------------------------------------------------- */
+
+/* ========================================================= */
+/* REMOVE DOMINO                                               */
+/* ========================================================= */
 
 static void removeFromHand(
     uint8_t who,
@@ -502,15 +702,16 @@ static void removeFromHand(
     )
     {
         selectedTile =
-            players[who].count > 0 ?
-            players[who].count - 1 :
-            0;
+            players[who].count > 0
+                ? players[who].count - 1
+                : 0;
     }
 }
 
-/* --------------------------------------------------------- */
-/* Play domino                                                 */
-/* --------------------------------------------------------- */
+
+/* ========================================================= */
+/* PLAY DOMINO                                                 */
+/* ========================================================= */
 
 static void playDomino(
     uint8_t who,
@@ -524,14 +725,25 @@ static void playDomino(
     d = players[who].hand[index];
 
     if (target == 0)
-        endValue = players[who].trainEnd;
+    {
+        endValue =
+            players[who].trainEnd;
+    }
     else if (target == 1)
-        endValue = mexicanEnd;
+    {
+        endValue =
+            mexicanEnd;
+    }
     else
+    {
         endValue =
             players[target - 2].trainEnd;
+    }
 
-    d = orientDomino(d, endValue);
+    d = orientDomino(
+        d,
+        endValue
+    );
 
     if (target == 0)
     {
@@ -549,7 +761,10 @@ static void playDomino(
         players[target - 2].open = false;
     }
 
-    removeFromHand(who, index);
+    removeFromHand(
+        who,
+        index
+    );
 
     if (isDouble(d))
     {
@@ -580,11 +795,14 @@ static void playDomino(
     wait_ms(70);
 }
 
-/* --------------------------------------------------------- */
-/* Draw tile                                                   */
-/* --------------------------------------------------------- */
 
-static bool drawTileFromPile(uint8_t who)
+/* ========================================================= */
+/* DRAW TILE                                                   */
+/* ========================================================= */
+
+static bool drawTileFromPile(
+    uint8_t who
+)
 {
     if (
         pileCount == 0 ||
@@ -605,17 +823,23 @@ static bool drawTileFromPile(uint8_t who)
     return true;
 }
 
-/* --------------------------------------------------------- */
-/* CPU turn                                                    */
-/* --------------------------------------------------------- */
+
+/* ========================================================= */
+/* CPU TURN                                                    */
+/* ========================================================= */
 
 static void cpuTurn(void)
 {
     uint8_t i;
     uint8_t t;
 
-    /* First look for a playable double */
-    for (i = 0; i < players[currentPlayer].count; i++)
+    /* Look for a playable double first */
+
+    for (
+        i = 0;
+        i < players[currentPlayer].count;
+        i++
+    )
     {
         if (
             isDouble(
@@ -623,7 +847,11 @@ static void cpuTurn(void)
             )
         )
         {
-            for (t = 0; t < playerCount + 2; t++)
+            for (
+                t = 0;
+                t < playerCount + 2;
+                t++
+            )
             {
                 if (
                     canPlayOnTarget(
@@ -646,9 +874,18 @@ static void cpuTurn(void)
     }
 
     /* Then any playable tile */
-    for (i = 0; i < players[currentPlayer].count; i++)
+
+    for (
+        i = 0;
+        i < players[currentPlayer].count;
+        i++
+    )
     {
-        for (t = 0; t < playerCount + 2; t++)
+        for (
+            t = 0;
+            t < playerCount + 2;
+            t++
+        )
         {
             if (
                 canPlayOnTarget(
@@ -670,7 +907,10 @@ static void cpuTurn(void)
     }
 
     /* Draw */
-    if (drawTileFromPile(currentPlayer))
+
+    if (
+        drawTileFromPile(currentPlayer)
+    )
     {
         for (
             i = 0;
@@ -704,7 +944,8 @@ static void cpuTurn(void)
         }
     }
 
-    /* No move: open player's train */
+    /* No move */
+
     players[currentPlayer].open = true;
 
     currentPlayer =
@@ -715,14 +956,16 @@ static void cpuTurn(void)
     selectedTarget = 0;
 }
 
-/* --------------------------------------------------------- */
-/* Setup screen                                                */
-/* --------------------------------------------------------- */
+
+/* ========================================================= */
+/* SETUP SCREEN                                                */
+/* ========================================================= */
 
 static void drawSetupScreen(void)
 {
     uint8_t i;
     int y;
+
     char buffer[32];
 
     fillScreenColor(COLOR_BG);
@@ -746,7 +989,11 @@ static void drawSetupScreen(void)
         COLOR_WHITE
     );
 
-    sprintf(buffer, "%u", playerCount);
+    sprintf(
+        buffer,
+        "%u",
+        playerCount
+    );
 
     fillRect(
         92,
@@ -777,7 +1024,11 @@ static void drawSetupScreen(void)
         COLOR_TEXT
     );
 
-    for (i = 0; i < playerCount; i++)
+    for (
+        i = 0;
+        i < playerCount;
+        i++
+    )
     {
         y = 66 + i * 20;
 
@@ -862,13 +1113,16 @@ static void drawSetupScreen(void)
     );
 }
 
-/* --------------------------------------------------------- */
-/* Setup controls                                              */
-/* --------------------------------------------------------- */
+
+/* ========================================================= */
+/* SETUP CONTROLS                                              */
+/* ========================================================= */
 
 static void setupControls(void)
 {
     kb_Scan();
+
+    /* Player selection */
 
     if (kb_IsDown(kb_Up))
     {
@@ -891,6 +1145,8 @@ static void setupControls(void)
         wait_ms(120);
     }
 
+    /* Toggle HUMAN / CPU */
+
     if (
         kb_IsDown(kb_Left) ||
         kb_IsDown(kb_Right)
@@ -902,18 +1158,14 @@ static void setupControls(void)
         wait_ms(160);
     }
 
-    /*
-       TRACE adds a player.
-    */
+    /* TRACE adds player */
+
     if (kb_IsDown(kb_Trace))
     {
         if (playerCount < MAX_PLAYERS)
         {
             playerCount++;
 
-            /*
-               New players default to CPU.
-            */
             players[playerCount - 1].cpu = true;
             players[playerCount - 1].open = false;
             players[playerCount - 1].trainEnd = 12;
@@ -923,9 +1175,8 @@ static void setupControls(void)
         wait_ms(160);
     }
 
-    /*
-       GRAPHVAR removes a player.
-    */
+    /* GRAPHVAR removes player */
+
     if (kb_IsDown(kb_GraphVar))
     {
         if (playerCount > MIN_PLAYERS)
@@ -944,6 +1195,8 @@ static void setupControls(void)
         wait_ms(160);
     }
 
+    /* START */
+
     if (kb_IsDown(kb_2nd))
     {
         setupMode = false;
@@ -956,9 +1209,10 @@ static void setupControls(void)
     }
 }
 
-/* --------------------------------------------------------- */
-/* Game screen                                                 */
-/* --------------------------------------------------------- */
+
+/* ========================================================= */
+/* GAME SCREEN                                                 */
+/* ========================================================= */
 
 static void drawGameScreen(void)
 {
@@ -974,9 +1228,7 @@ static void drawGameScreen(void)
 
     fillScreenColor(COLOR_BG);
 
-    /* ----------------------------------------------------- */
-    /* Header                                                 */
-    /* ----------------------------------------------------- */
+    /* Header */
 
     fillRect(
         0,
@@ -1025,9 +1277,7 @@ static void drawGameScreen(void)
         COLOR_TEXT
     );
 
-    /* ----------------------------------------------------- */
-    /* Board                                                  */
-    /* ----------------------------------------------------- */
+    /* Board */
 
     fillRect(
         8,
@@ -1052,7 +1302,8 @@ static void drawGameScreen(void)
         COLOR_TEXT
     );
 
-    /* Mexican train */
+    /* Mexican Train */
+
     drawText(
         16,
         61,
@@ -1070,15 +1321,25 @@ static void drawGameScreen(void)
     );
 
     /* Opponents */
+
     shown = 0;
 
-    for (i = 0; i < playerCount; i++)
+    for (
+        i = 0;
+        i < playerCount;
+        i++
+    )
     {
         if (i == currentPlayer)
             continue;
 
-        x = 124 + (shown % 3) * 61;
-        y = 67 + (shown / 3) * 34;
+        x =
+            124 +
+            (shown % 3) * 61;
+
+        y =
+            67 +
+            (shown / 3) * 34;
 
         sprintf(
             buffer,
@@ -1106,6 +1367,7 @@ static void drawGameScreen(void)
     }
 
     /* Current player's train */
+
     drawText(
         16,
         110,
@@ -1122,9 +1384,7 @@ static void drawGameScreen(void)
         players[currentPlayer].count
     );
 
-    /* ----------------------------------------------------- */
-    /* Target panel                                            */
-    /* ----------------------------------------------------- */
+    /* Target panel */
 
     fillRect(
         8,
@@ -1183,9 +1443,7 @@ static void drawGameScreen(void)
         );
     }
 
-    /* ----------------------------------------------------- */
-    /* Hand area                                               */
-    /* ----------------------------------------------------- */
+    /* Hand */
 
     fillRect(
         8,
@@ -1204,9 +1462,14 @@ static void drawGameScreen(void)
 
     visible = 6;
 
-    for (i = 0; i < visible; i++)
+    for (
+        i = 0;
+        i < visible;
+        i++
+    )
     {
-        index = handScroll + i;
+        index =
+            handScroll + i;
 
         if (
             index >=
@@ -1216,7 +1479,9 @@ static void drawGameScreen(void)
             break;
         }
 
-        x = 13 + i * 49;
+        x =
+            13 +
+            i * 49;
 
         drawDomino(
             x,
@@ -1251,9 +1516,7 @@ static void drawGameScreen(void)
         );
     }
 
-    /* ----------------------------------------------------- */
-    /* Controls                                                */
-    /* ----------------------------------------------------- */
+    /* Controls */
 
     drawText(
         7,
@@ -1291,34 +1554,44 @@ static void drawGameScreen(void)
     );
 }
 
-/* --------------------------------------------------------- */
-/* Game controls                                               */
-/* --------------------------------------------------------- */
+
+/* ========================================================= */
+/* GAME CONTROLS                                               */
+/* ========================================================= */
 
 static void gameControls(void)
 {
     kb_Scan();
 
-    /* CPU */
+    /* CPU turn */
+
     if (players[currentPlayer].cpu)
     {
         cpuTurn();
         return;
     }
 
-    /* Left */
+    /* Previous tile */
+
     if (kb_IsDown(kb_Left))
     {
         if (selectedTile > 0)
             selectedTile--;
 
-        if (selectedTile < handScroll)
-            handScroll = selectedTile;
+        if (
+            selectedTile <
+            handScroll
+        )
+        {
+            handScroll =
+                selectedTile;
+        }
 
         wait_ms(110);
     }
 
-    /* Right */
+    /* Next tile */
+
     if (kb_IsDown(kb_Right))
     {
         if (
@@ -1341,19 +1614,25 @@ static void gameControls(void)
         wait_ms(110);
     }
 
-    /* Up */
+    /* Previous target */
+
     if (kb_IsDown(kb_Up))
     {
         if (selectedTarget > 0)
+        {
             selectedTarget--;
+        }
         else
+        {
             selectedTarget =
                 playerCount + 1;
+        }
 
         wait_ms(110);
     }
 
-    /* Down */
+    /* Next target */
+
     if (kb_IsDown(kb_Down))
     {
         if (
@@ -1372,14 +1651,18 @@ static void gameControls(void)
     }
 
     /* Draw */
+
     if (kb_IsDown(kb_Graph))
     {
-        drawTileFromPile(currentPlayer);
+        drawTileFromPile(
+            currentPlayer
+        );
 
         wait_ms(150);
     }
 
     /* Play */
+
     if (
         kb_IsDown(kb_2nd) &&
         players[currentPlayer].count > 0
@@ -1404,13 +1687,14 @@ static void gameControls(void)
     }
 
     /* Pass */
+
     if (kb_IsDown(kb_Clear))
     {
-        /*
-           Only allow pass if there is no
-           legal move.
-        */
-        if (!playerHasMove(currentPlayer))
+        if (
+            !playerHasMove(
+                currentPlayer
+            )
+        )
         {
             players[currentPlayer].open = true;
 
@@ -1427,13 +1711,15 @@ static void gameControls(void)
     }
 }
 
-/* --------------------------------------------------------- */
-/* Score screen                                                */
-/* --------------------------------------------------------- */
+
+/* ========================================================= */
+/* SCORE SCREEN                                                */
+/* ========================================================= */
 
 static void drawScoreScreen(void)
 {
     uint8_t i;
+
     char buffer[48];
 
     fillScreenColor(COLOR_BG);
@@ -1444,7 +1730,11 @@ static void drawScoreScreen(void)
         COLOR_YELLOW
     );
 
-    for (i = 0; i < playerCount; i++)
+    for (
+        i = 0;
+        i < playerCount;
+        i++
+    )
     {
         sprintf(
             buffer,
@@ -1474,9 +1764,10 @@ static void drawScoreScreen(void)
     );
 }
 
-/* --------------------------------------------------------- */
-/* Score screen controls                                       */
-/* --------------------------------------------------------- */
+
+/* ========================================================= */
+/* SCORE CONTROLS                                              */
+/* ========================================================= */
 
 static void scoreControls(void)
 {
@@ -1503,9 +1794,10 @@ static void scoreControls(void)
     }
 }
 
-/* --------------------------------------------------------- */
-/* Main                                                        */
-/* --------------------------------------------------------- */
+
+/* ========================================================= */
+/* MAIN                                                         */
+/* ========================================================= */
 
 int main(void)
 {
@@ -1513,11 +1805,17 @@ int main(void)
 
     gfx_Begin();
 
+    setupPalette();
+
     gfx_SetDrawBuffer();
 
     srand(12345);
 
-    for (i = 0; i < MAX_PLAYERS; i++)
+    for (
+        i = 0;
+        i < MAX_PLAYERS;
+        i++
+    )
     {
         players[i].cpu = true;
         players[i].open = false;
@@ -1527,9 +1825,10 @@ int main(void)
     }
 
     /*
-       Player 1 starts as HUMAN.
-       Everyone else starts as CPU.
+        Player 1 starts HUMAN.
+        Everyone else starts CPU.
     */
+
     players[0].cpu = false;
 
     while (1)
@@ -1553,12 +1852,18 @@ int main(void)
         else
         {
             /*
-               A player with zero tiles ends
-               the round.
+                Check for an empty hand.
             */
-            for (i = 0; i < playerCount; i++)
+
+            for (
+                i = 0;
+                i < playerCount;
+                i++
+            )
             {
-                if (players[i].count == 0)
+                if (
+                    players[i].count == 0
+                )
                 {
                     roundOver = true;
                     break;
