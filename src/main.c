@@ -1,3 +1,4 @@
+
 #include <graphx.h>
 #include <keypadc.h>
 #include <stdbool.h>
@@ -5,628 +6,343 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define W 320
+#define H 240
 #define MAX_PLAYERS 8
 #define MAX_HAND 15
-#define DOMINOES 91
-#define SCREEN_W 320
-#define SCREEN_H 240
+#define TILE_COUNT 91
+#define TRAIN_MAX 64
 
-typedef struct {
-    uint8_t a, b;
-} Domino;
-
+typedef struct { uint8_t a,b; } Domino;
 typedef struct {
     Domino hand[MAX_HAND];
     uint8_t count;
-    bool cpu;
-    bool open;
-    int8_t train_end;
+    bool cpu, open;
+    uint8_t trainEnd;
     uint16_t score;
 } Player;
 
-typedef enum {
-    SCREEN_SETUP,
-    SCREEN_GAME,
-    SCREEN_SCORES
-} Screen;
-
-static Player players[MAX_PLAYERS];
-static Domino pile[DOMINOES];
-static uint8_t pile_count;
-static uint8_t player_count = 4;
-static uint8_t setup_cursor = 0;
-static uint8_t setup_field = 0;
-static uint8_t turn = 0;
-static uint8_t selected = 0;
-static uint8_t target = 0;
-static uint8_t round_no = 1;
-static uint8_t winner = 255;
-static uint8_t mexican_end = 12;
-static bool mexican_open = false;
-static bool forced_double = false;
-static uint8_t forced_player = 0;
-static uint8_t forced_train = 0;
-static bool drawn_this_turn = false;
-static Screen screen = SCREEN_SETUP;
-static uint32_t rng_state = 0xA53C9E71u;
-static uint8_t anim_kind = 0;
-static uint8_t anim_frame = 0;
-static uint8_t anim_max = 0;
-static uint8_t message_timer = 0;
-static char message[40] = "";
+static Player p[MAX_PLAYERS];
+static Domino pile[TILE_COUNT];
+static uint8_t pileCount;
+static uint8_t players = 2, current = 0;
+static uint8_t handSel = 0, handScroll = 0;
+static uint8_t target = 0; /* 0 own, 1 Mexican, 2.. player trains */
+static bool setup = true, gameOver = false;
+static uint8_t mexicanEnd = 12;
+static bool mexicanOpen = true;
+static bool doublePending = false;
+static uint8_t doubleOwner = 0;
+static uint8_t roundNo = 1;
 
 static const uint16_t COLORS[MAX_PLAYERS] = {
-    gfx_RGBTo1555(40,120,255),
-    gfx_RGBTo1555(235,65,65),
-    gfx_RGBTo1555(50,205,105),
-    gfx_RGBTo1555(245,155,45),
-    gfx_RGBTo1555(165,85,230),
-    gfx_RGBTo1555(35,200,205),
-    gfx_RGBTo1555(245,215,55),
-    gfx_RGBTo1555(235,90,175)
+    gfx_RGBTo1555(40,170,255), gfx_RGBTo1555(255,80,80),
+    gfx_RGBTo1555(70,210,110), gfx_RGBTo1555(255,190,40),
+    gfx_RGBTo1555(190,100,255), gfx_RGBTo1555(255,110,190),
+    gfx_RGBTo1555(60,220,210), gfx_RGBTo1555(240,240,240)
 };
 
-static uint32_t rnd(void) {
-    rng_state ^= rng_state << 13;
-    rng_state ^= rng_state >> 17;
-    rng_state ^= rng_state << 5;
-    return rng_state;
+static void text(int x,int y,const char *s,uint16_t c){
+    gfx_SetTextFGColor(c); gfx_SetTextXY(x,y); gfx_PrintString(s);
+}
+static void rect(int x,int y,int w,int h,uint16_t c){
+    gfx_SetColor(c); gfx_FillRectangle(x,y,w,h);
+}
+static void frame(int x,int y,int w,int h,uint16_t c){
+    gfx_SetColor(c); gfx_Rectangle(x,y,w,h);
+}
+static void centerText(int y,const char *s,uint16_t c){
+    int x=(W-(int)strlen(s)*6)/2; if(x<0)x=0; text(x,y,s,c);
+}
+static void u8str(uint8_t n,char *s){ sprintf(s,"%u",n); }
+
+static void drawTile(int x,int y,int w,int h,Domino d,bool selected){
+    uint16_t bg = gfx_RGBTo1555(245,245,245);
+    uint16_t fg = gfx_RGBTo1555(20,20,20);
+    if(selected){ rect(x-2,y-2,w+4,h+4,gfx_RGBTo1555(255,210,30)); }
+    rect(x,y,w,h,bg); frame(x,y,w,h,fg);
+    gfx_SetColor(fg);
+    gfx_Line(x+2,y+h/2,x+w-3,y+h/2);
+    char a[4],b[4]; u8str(d.a,a); u8str(d.b,b);
+    text(x+w/2-(int)strlen(a)*3,y+5,a,fg);
+    text(x+w/2-(int)strlen(b)*3,y+h/2+5,b,fg);
 }
 
-static void wait_release(void) {
-    while (kb_AnyKey()) kb_Scan();
-}
-
-static bool pressed(kb_lkey_t key) {
-    kb_Scan();
-    return kb_IsDown(key);
-}
-
-static void set_message(const char *s) {
-    strncpy(message, s, sizeof(message) - 1);
-    message[sizeof(message) - 1] = 0;
-    message_timer = 50;
-}
-
-static uint16_t player_color(uint8_t p) {
-    return COLORS[p % MAX_PLAYERS];
-}
-
-static void text(int x, int y, uint16_t color, const char *s) {
-    gfx_SetTextFGColor(color);
-    gfx_SetTextXY(x, y);
-    gfx_PrintString(s);
-}
-
-static void centered(int y, uint16_t color, const char *s) {
-    int w = gfx_GetStringWidth(s);
-    text((SCREEN_W - w) / 2, y, color, s);
-}
-
-static void draw_title(void) {
-    gfx_SetColor(gfx_RGBTo1555(20, 28, 45));
-    gfx_FillRectangle(0, 0, SCREEN_W, 28);
-    centered(7, gfx_RGBTo1555(255,255,255), "MEXICAN TRAIN");
-}
-
-static void draw_domino(Domino d, int x, int y, int w, int h, uint16_t accent, bool selected_tile) {
-    gfx_SetColor(gfx_RGBTo1555(248,248,242));
-    gfx_FillRectangle(x, y, w, h);
-    gfx_SetColor(selected_tile ? accent : gfx_RGBTo1555(80,80,80));
-    gfx_Rectangle(x, y, w, h);
-    gfx_SetColor(gfx_RGBTo1555(80,80,80));
-    gfx_FillRectangle(x + 2, y + h/2 - 1, w - 4, 2);
-
-    gfx_SetColor(gfx_RGBTo1555(25,25,30));
-    gfx_FillCircle(x + w/2, y + h/4, 3);
-    gfx_FillCircle(x + w/2, y + (h*3)/4, 3);
-
-    char buf[4];
-    buf[0] = '0' + d.a; buf[1] = 0;
-    text(x + w/2 - 3, y + 5, gfx_RGBTo1555(25,25,30), buf);
-    buf[0] = '0' + d.b; buf[1] = 0;
-    text(x + w/2 - 3, y + h/2 + 4, gfx_RGBTo1555(25,25,30), buf);
-}
-
-static void draw_train(int x, int y, uint16_t color, const char *label, int end_value, bool open) {
-    gfx_SetColor(color);
-    gfx_FillCircle(x, y, 8);
-    gfx_SetColor(gfx_RGBTo1555(245,245,245));
-    gfx_FillCircle(x, y, 5);
-    gfx_SetColor(color);
-    gfx_FillCircle(x, y, 2);
-    text(x + 12, y - 5, gfx_RGBTo1555(245,245,245), label);
-
-    char n[3];
-    n[0] = '0' + (end_value / 10);
-    n[1] = '0' + (end_value % 10);
-    n[2] = 0;
-    if (end_value < 10) { n[0] = n[1]; n[1] = 0; }
-    text(x + 12, y + 7, gfx_RGBTo1555(200,210,220), n);
-    if (open) {
-        gfx_SetColor(gfx_RGBTo1555(255,80,80));
-        gfx_FillCircle(x + 95, y, 4);
+static void drawTrain(int cx,int cy,uint8_t end,uint16_t c,bool open,uint8_t count){
+    gfx_SetColor(c);
+    gfx_FillCircle(cx,cy,7);
+    frame(cx-8,cy-8,16,16,gfx_RGBTo1555(10,10,10));
+    char s[4]; u8str(end,s);
+    text(cx-3,cy-4,s,gfx_RGBTo1555(10,10,10));
+    if(open){
+        frame(cx-11,cy-11,22,22,gfx_RGBTo1555(255,210,30));
     }
+    char n[8]; sprintf(n,"%u",count);
+    text(cx-3,cy+12,n,gfx_RGBTo1555(230,230,230));
 }
 
-static void draw_setup(void) {
-    gfx_SetColor(gfx_RGBTo1555(12,18,30));
-    gfx_FillScreen(gfx_RGBTo1555(12,18,30));
-    draw_title();
-
-    centered(40, gfx_RGBTo1555(220,225,235), "GAME SETUP");
-
-    text(35, 62, gfx_RGBTo1555(190,200,215), "PLAYERS");
-    gfx_SetColor(gfx_RGBTo1555(35,45,65));
-    gfx_FillRectangle(30, 55, 260, 28);
-
-    text(45, 64, gfx_RGBTo1555(255,255,255), "TOTAL PLAYERS:");
-    char n[3];
-    n[0] = '0' + player_count;
-    n[1] = 0;
-    text(225, 64, gfx_RGBTo1555(255,220,70), n);
-
-    text(45, 92, gfx_RGBTo1555(190,200,215), "PLAYER TYPES");
-    for (uint8_t i = 0; i < player_count; ++i) {
-        int y = 108 + i * 13;
-        if (i == setup_cursor && setup_field == 1) {
-            gfx_SetColor(gfx_RGBTo1555(45,55,80));
-            gfx_FillRectangle(30, y - 2, 260, 13);
+static void buildPile(void){
+    uint8_t k=0;
+    for(uint8_t a=0;a<=12;a++)
+        for(uint8_t b=a;b<=12;b++){
+            pile[k].a=a; pile[k].b=b; k++;
         }
-        gfx_SetColor(player_color(i));
-        gfx_FillCircle(40, y + 4, 4);
-
-        char line[20];
-        line[0] = 'P'; line[1] = '1' + i; line[2] = ' ';
-        if (players[i].cpu) {
-            line[3]='C'; line[4]='P'; line[5]='U'; line[6]=0;
-        } else {
-            line[3]='H'; line[4]='U'; line[5]='M'; line[6]='A'; line[7]='N'; line[8]=0;
-        }
-        text(50, y, gfx_RGBTo1555(240,240,245), line);
-    }
-
-    text(32, 222, gfx_RGBTo1555(170,180,195), "UP/DOWN  SELECT    LEFT/RIGHT  CHANGE");
-    text(32, 232, gfx_RGBTo1555(255,220,70), "ENTER = START");
-}
-
-static void reset_players(void) {
-    for (uint8_t i = 0; i < MAX_PLAYERS; ++i) {
-        players[i].count = 0;
-        players[i].cpu = (i != 0);
-        players[i].open = false;
-        players[i].train_end = 12;
-        players[i].score = 0;
+    pileCount=TILE_COUNT;
+    for(int i=TILE_COUNT-1;i>0;i--){
+        int j=rand()%(i+1); Domino t=pile[i]; pile[i]=pile[j]; pile[j]=t;
     }
 }
+static bool isMatch(Domino d,uint8_t end){
+    return d.a==end || d.b==end;
+}
+static Domino orient(Domino d,uint8_t end){
+    if(d.a==end){ Domino z={d.a,d.b}; return z; }
+    Domino z={d.b,d.a}; return z;
+}
+static bool isDouble(Domino d){ return d.a==d.b; }
 
-static void build_deck(void) {
-    pile_count = 0;
-    for (uint8_t a = 0; a <= 12; ++a) {
-        for (uint8_t b = a; b <= 12; ++b) {
-            if (a == 12 && b == 12) continue;
-            pile[pile_count++] = (Domino){a,b};
-        }
+static void deal(void){
+    buildPile();
+    for(uint8_t i=0;i<players;i++){
+        p[i].count=0; p[i].open=false; p[i].trainEnd=12;
+        for(uint8_t j=0;j<MAX_HAND;j++) p[i].hand[j]=(Domino){0,0};
     }
-    for (int i = pile_count - 1; i > 0; --i) {
-        int j = (int)(rnd() % (uint32_t)(i + 1));
-        Domino t = pile[i]; pile[i] = pile[j]; pile[j] = t;
-    }
+    uint8_t handSize = players<=4 ? 15 : (players<=6 ? 12 : 10);
+    for(uint8_t r=0;r<handSize;r++)
+        for(uint8_t i=0;i<players;i++)
+            if(pileCount){ p[i].hand[p[i].count++]=pile[--pileCount]; }
+    current=0; handSel=0; handScroll=0; target=0;
+    mexicanEnd=12; mexicanOpen=true; doublePending=false;
 }
 
-static Domino draw_pile(void) {
-    if (!pile_count) return (Domino){255,255};
-    return pile[--pile_count];
+static int playableOnTarget(Domino d,uint8_t t,uint8_t who){
+    if(t==0) return isMatch(d,p[who].trainEnd);
+    if(t==1) return mexicanOpen && isMatch(d,mexicanEnd);
+    uint8_t other=t-2;
+    if(other>=players || other==who) return 0;
+    return p[other].open && isMatch(d,p[other].trainEnd);
 }
 
-static void start_round(void) {
-    build_deck();
-    mexican_end = 12;
-    mexican_open = false;
-    forced_double = false;
-    winner = 255;
-    turn = 0;
-    selected = 0;
-    target = 0;
-    drawn_this_turn = false;
-
-    for (uint8_t i = 0; i < player_count; ++i) {
-        players[i].count = 0;
-        players[i].open = false;
-        players[i].train_end = 12;
-    }
-
-    uint8_t hand_size = player_count <= 4 ? 15 : (player_count <= 6 ? 12 : 10);
-    for (uint8_t i = 0; i < player_count; ++i) {
-        for (uint8_t k = 0; k < hand_size; ++k)
-            players[i].hand[players[i].count++] = draw_pile();
-    }
-
-    set_message("ROUND START");
-    anim_kind = 1; anim_frame = 0; anim_max = 16;
-    screen = SCREEN_GAME;
+static bool canPlayAny(uint8_t who){
+    for(uint8_t i=0;i<p[who].count;i++)
+        for(uint8_t t=0;t<players+2;t++)
+            if(playableOnTarget(p[who].hand[i],t,who)) return true;
+    return false;
 }
 
-static bool matches(Domino d, int end) {
-    return d.a == end || d.b == end;
+static void removeHand(uint8_t who,uint8_t idx){
+    for(uint8_t i=idx;i+1<p[who].count;i++) p[who].hand[i]=p[who].hand[i+1];
+    if(p[who].count) p[who].count--;
+    if(handSel>=p[who].count && handSel) handSel--;
 }
 
-static int other_side(Domino d, int end) {
-    if (d.a == end) return d.b;
-    if (d.b == end) return d.a;
-    return -1;
+static void playTile(uint8_t who,uint8_t idx,uint8_t t){
+    Domino d=p[who].hand[idx];
+    d=orient(d, t==0?p[who].trainEnd:(t==1?mexicanEnd:p[t-2].trainEnd));
+    if(t==0){ p[who].trainEnd=d.b; p[who].open=false; }
+    else if(t==1){ mexicanEnd=d.b; mexicanOpen=true; }
+    else { p[t-2].trainEnd=d.b; p[t-2].open=false; }
+    removeHand(who,idx);
+    if(isDouble(d)){ doublePending=true; doubleOwner=who; }
+    else if(doublePending && who==doubleOwner) doublePending=false;
+    current=(current+1)%players;
+    handSel=0; handScroll=0; target=0;
+    gfx_SwapDraw(); delay(90);
 }
 
-/* target: 0 = own train, 1 = Mexican, 2..9 = player train 0..7 */
-static bool target_allowed(uint8_t p, uint8_t t) {
-    if (t == 0) return true;
-    if (t == 1) return true;
-    uint8_t other = t - 2;
-    if (other >= player_count || other == p) return false;
-    return players[other].open;
+static void drawOne(uint8_t who){
+    if(pileCount && p[who].count<MAX_HAND) p[who].hand[p[who].count++]=pile[--pileCount];
 }
 
-static int target_end(uint8_t p, uint8_t t) {
-    if (t == 0) return players[p].train_end;
-    if (t == 1) return mexican_end;
-    return players[t - 2].train_end;
-}
-
-static void remove_hand(uint8_t p, uint8_t idx) {
-    for (uint8_t i = idx; i + 1 < players[p].count; ++i)
-        players[p].hand[i] = players[p].hand[i + 1];
-    if (players[p].count) players[p].count--;
-    if (selected >= players[p].count && players[p].count) selected = players[p].count - 1;
-}
-
-static bool play_tile(uint8_t p, uint8_t idx, uint8_t t) {
-    if (idx >= players[p].count || !target_allowed(p,t)) return false;
-    Domino d = players[p].hand[idx];
-    int end = target_end(p,t);
-    if (!matches(d,end)) return false;
-
-    int new_end = other_side(d,end);
-    if (new_end < 0) return false;
-
-    if (t == 0) {
-        players[p].train_end = new_end;
-        players[p].open = false;
-    } else if (t == 1) {
-        mexican_end = new_end;
-        mexican_open = false;
-    } else {
-        players[t-2].train_end = new_end;
-        players[t-2].open = false;
-    }
-
-    bool is_double = (d.a == d.b);
-    remove_hand(p,idx);
-
-    if (is_double) {
-        forced_double = true;
-        forced_player = p;
-        forced_train = t;
-    } else {
-        forced_double = false;
-        turn = (p + 1) % player_count;
-    }
-
-    anim_kind = 2; anim_frame = 0; anim_max = 10;
-    drawn_this_turn = false;
-
-    if (players[p].count == 0) {
-        winner = p;
-        screen = SCREEN_SCORES;
-    }
-    return true;
-}
-
-static bool find_cpu_move(uint8_t p, uint8_t *out_i, uint8_t *out_t) {
-    int best_score = -9999;
-    bool found = false;
-
-    for (uint8_t i = 0; i < players[p].count; ++i) {
-        Domino d = players[p].hand[i];
-        for (uint8_t t = 0; t < 2 + player_count; ++t) {
-            if (!target_allowed(p,t)) continue;
-            int end = target_end(p,t);
-            if (!matches(d,end)) continue;
-
-            int score = (d.a + d.b);
-            if (d.a == d.b) score += 30;
-            if (t == 0) score += 5;
-            if (t == 1) score += 2;
-            if (score > best_score) {
-                best_score = score;
-                *out_i = i;
-                *out_t = t;
-                found = true;
+static void cpuTurn(void){
+    uint8_t best=255,bt=255;
+    for(uint8_t i=0;i<p[current].count;i++){
+        for(uint8_t t=0;t<players+2;t++){
+            if(playableOnTarget(p[current].hand[i],t,current)){
+                if(isDouble(p[current].hand[i])){ best=i;bt=t; }
+                else if(best==255){ best=i;bt=t; }
             }
         }
     }
-    return found;
+    if(best!=255){ playTile(current,best,bt); return; }
+    drawOne(current);
+    for(uint8_t i=0;i<p[current].count;i++)
+        for(uint8_t t=0;t<players+2;t++)
+            if(playableOnTarget(p[current].hand[i],t,current)){ playTile(current,i,t); return; }
+    p[current].open=true;
+    current=(current+1)%players;
 }
 
-static void cpu_turn(void) {
-    uint8_t p = turn;
+static void drawSetup(void){
+    gfx_FillScreen(gfx_RGBTo1555(18,22,32));
+    centerText(8,"MEXICAN TRAIN",gfx_RGBTo1555(255,210,30));
+    centerText(22,"DOUBLE-12",gfx_RGBTo1555(220,220,220));
+    text(22,43,"PLAYERS",gfx_RGBTo1555(255,255,255));
+    char s[8]; sprintf(s,"%u",players);
+    rect(105,39,45,20,gfx_RGBTo1555(35,42,58)); frame(105,39,45,20,gfx_RGBTo1555(100,110,130));
+    centerText(44,s,gfx_RGBTo1555(255,255,255));
+    text(172,43,"LEFT/RIGHT",gfx_RGBTo1555(150,160,180));
 
-    if (forced_double) {
-        p = forced_player;
-        turn = p;
+    for(uint8_t i=0;i<players;i++){
+        int y=68+i*20;
+        char name[16]; sprintf(name,"PLAYER %u",i+1);
+        text(22,y,name,COLORS[i]);
+        rect(105,y-3,75,16,gfx_RGBTo1555(35,42,58));
+        frame(105,y-3,75,16,COLORS[i]);
+        text(114,y,i==current && p[i].cpu==false ? "HUMAN" : (p[i].cpu ? "CPU" : "HUMAN"),
+             gfx_RGBTo1555(245,245,245));
+        if(i==current) text(190,y,"< SELECT",gfx_RGBTo1555(255,210,30));
     }
-
-    uint8_t i, t;
-    if (find_cpu_move(p,&i,&t)) {
-        play_tile(p,i,t);
-        return;
+    text(22,232,"UP/DOWN: PLAYER   LEFT/RIGHT: HUMAN/CPU   2ND: START",gfx_RGBTo1555(190,200,215));
+}
+static void setupKeys(void){
+    kb_Scan();
+    if(kb_IsDown(kb_Up)){ if(current) current--; delay(100); }
+    if(kb_IsDown(kb_Down)){ if(current+1<players) current++; delay(100); }
+    if(kb_IsDown(kb_Left) || kb_IsDown(kb_Right)){
+        p[current].cpu=!p[current].cpu; delay(140);
     }
-
-    if (!drawn_this_turn && pile_count) {
-        players[p].hand[players[p].count++] = draw_pile();
-        drawn_this_turn = true;
-        if (find_cpu_move(p,&i,&t)) {
-            play_tile(p,i,t);
-            return;
-        }
+    if(kb_IsDown(kb_Alpha)){ /* add one player */ }
+    if(kb_IsDown(kb_2nd)){
+        setup=false; current=0; deal(); delay(200);
     }
-
-    players[p].open = true;
-    drawn_this_turn = false;
-    forced_double = false;
-    turn = (p + 1) % player_count;
-    anim_kind = 3; anim_frame = 0; anim_max = 8;
+    if(kb_IsDown(kb_Clear)){
+        setup=true; current=0; delay(150);
+    }
+    /* player count: mode key cycles 2..8 with +/− on Zoom/Trace */
+    if(kb_IsDown(kb_Trace)){ if(players<8)players++; if(current>=players)current=players-1; delay(130); }
+    if(kb_IsDown(kb_GraphVar)){ if(players>2)players--; if(current>=players)current=players-1; delay(130); }
 }
 
-static void draw_board(void) {
-    gfx_SetColor(gfx_RGBTo1555(13,25,30));
-    gfx_FillScreen(gfx_RGBTo1555(13,25,30));
-    draw_title();
+static void drawGame(void){
+    gfx_FillScreen(gfx_RGBTo1555(14,18,27));
+    /* top status */
+    rect(0,0,W,30,gfx_RGBTo1555(28,34,48));
+    char s[32];
+    sprintf(s,"PLAYER %u'S TURN",current+1);
+    text(8,8,s,COLORS[current]);
+    sprintf(s,"PILE %u",pileCount);
+    text(118,8,s,gfx_RGBTo1555(210,215,225));
+    sprintf(s,"ROUND %u",roundNo);
+    text(235,8,s,gfx_RGBTo1555(210,215,225));
 
-    gfx_SetColor(gfx_RGBTo1555(25,55,48));
-    gfx_FillRectangle(0, 29, SCREEN_W, 122);
-
-    /* Center hub */
-    gfx_SetColor(gfx_RGBTo1555(55,45,30));
-    gfx_FillCircle(160,88,22);
-    text(143,82,gfx_RGBTo1555(255,225,110),"12");
-    text(133,96,gfx_RGBTo1555(210,210,210),"START");
+    /* board area */
+    frame(8,36,304,108,gfx_RGBTo1555(75,85,105));
+    centerText(40,"TRAINS",gfx_RGBTo1555(180,190,205));
 
     /* Mexican train */
-    gfx_SetColor(gfx_RGBTo1555(230,170,45));
-    gfx_FillCircle(160,132,7);
-    text(173,126,gfx_RGBTo1555(255,225,100),"MEXICAN");
-    if (mexican_open) {
-        gfx_SetColor(gfx_RGBTo1555(255,80,80));
-        gfx_FillCircle(248,132,4);
+    text(18,61,"MEX",gfx_RGBTo1555(255,210,30));
+    drawTrain(67,69,mexicanEnd,gfx_RGBTo1555(255,210,30),mexicanOpen,0);
+
+    /* opponent trains, compact */
+    uint8_t shown=0;
+    for(uint8_t i=0;i<players;i++) if(i!=current){
+        int x=120+(shown%3)*62, y=65+(shown/3)*35;
+        drawTrain(x,y,p[i].trainEnd,COLORS[i],p[i].open,p[i].count);
+        char n[10]; sprintf(n,"P%u",i+1); text(x-8,y-22,n,COLORS[i]);
+        shown++;
     }
+    /* own train */
+    text(18,111,"YOU",COLORS[current]);
+    drawTrain(67,119,p[current].trainEnd,COLORS[current],p[current].open,p[current].count);
 
-    /* Player trains around the board */
-    for (uint8_t i = 0; i < player_count; ++i) {
-        int x = 28 + (i % 4) * 88;
-        int y = 45 + (i / 4) * 40;
-        char lab[5] = {'P','1'+i,0};
-        draw_train(x,y,player_color(i),lab,players[i].train_end,players[i].open);
+    /* target + message */
+    rect(8,148,304,20,gfx_RGBTo1555(24,29,41));
+    if(doublePending){
+        sprintf(s,"DOUBLE: PLAYER %u MUST PLAY A DOUBLE",doubleOwner+1);
+    } else if(target==0) strcpy(s,"TARGET: YOUR TRAIN");
+    else if(target==1) strcpy(s,"TARGET: MEXICAN TRAIN");
+    else sprintf(s,"TARGET: PLAYER %u TRAIN",target-1);
+    text(14,154,s,gfx_RGBTo1555(255,255,255));
+
+    /* hand viewport */
+    rect(8,171,304,50,gfx_RGBTo1555(24,29,41));
+    text(12,174,"YOUR HAND",COLORS[current]);
+    uint8_t visible=6;
+    int x0=13;
+    for(uint8_t k=0;k<visible;k++){
+        uint8_t idx=handScroll+k;
+        if(idx>=p[current].count) break;
+        drawTile(x0+k*49,184,39,32,p[current].hand[idx],idx==handSel);
     }
+    if(handScroll>0) text(2,202,"<",gfx_RGBTo1555(255,210,30));
+    if(handScroll+visible<p[current].count) text(309,202,">",gfx_RGBTo1555(255,210,30));
 
-    /* Hand */
-    gfx_SetColor(gfx_RGBTo1555(18,28,42));
-    gfx_FillRectangle(0,153,SCREEN_W,87);
-
-    text(8,158,player_color(turn),"TURN:");
-    char who[5] = {'P','1'+turn,0};
-    text(42,158,gfx_RGBTo1555(245,245,245),who);
-    if (players[turn].cpu) text(70,158,gfx_RGBTo1555(170,180,195),"(CPU)");
-    else text(70,158,gfx_RGBTo1555(170,180,195),"(YOU)");
-
-    if (forced_double) text(125,158,gfx_RGBTo1555(255,150,70),"DOUBLE!");
-
-    uint8_t p = turn;
-    int max_show = players[p].count;
-    int w = max_show > 0 ? (300 / max_show) : 24;
-    if (w > 30) w = 30;
-    if (w < 17) w = 17;
-
-    int start_x = (SCREEN_W - w * max_show) / 2;
-    for (uint8_t i = 0; i < max_show; ++i) {
-        int x = start_x + i * w;
-        int y = 176 + (i == selected ? -5 : 0);
-        draw_domino(players[p].hand[i],x,y,w-2,54,player_color(p),i==selected);
-    }
-
-    char piletxt[8];
-    text(8,218,gfx_RGBTo1555(190,200,215),"DRAW:");
-    char pc[4];
-    pc[0]='0'+(pile_count/10); pc[1]='0'+(pile_count%10); pc[2]=0;
-    if (pile_count < 10) { pc[0]=pc[1]; pc[1]=0; }
-    text(42,218,gfx_RGBTo1555(255,220,70),pc);
-
-    text(75,218,gfx_RGBTo1555(170,180,195),"A/D TILE  2ND PLAY  GRAPH DRAW");
-    text(75,230,gfx_RGBTo1555(170,180,195),"UP/DOWN TARGET  ENTER PLAY  CLEAR PASS");
-
-    if (message_timer) {
-        gfx_SetColor(gfx_RGBTo1555(20,25,35));
-        gfx_FillRectangle(75,35,170,20);
-        centered(41,gfx_RGBTo1555(255,220,80),message);
-    }
+    text(8,226,"LEFT/RIGHT TILE  UP/DOWN TARGET",gfx_RGBTo1555(175,185,200));
+    text(8,235,"2ND PLAY  GRAPH DRAW  CLEAR PASS",gfx_RGBTo1555(175,185,200));
 }
 
-static void draw_scores(void) {
-    gfx_SetColor(gfx_RGBTo1555(10,15,25));
-    gfx_FillScreen(gfx_RGBTo1555(10,15,25));
-    centered(18,gfx_RGBTo1555(255,220,80),"ROUND COMPLETE");
+static void gameKeys(void){
+    kb_Scan();
+    if(p[current].cpu){ cpuTurn(); return; }
 
-    if (winner < player_count) {
-        char s[12] = "PLAYER 1 WINS";
-        s[7] = '1' + winner;
-        centered(42,player_color(winner),s);
+    if(kb_IsDown(kb_Left)){
+        if(handSel>0) handSel--;
+        if(handSel<handScroll) handScroll=handSel;
+        delay(100);
     }
-
-    for (uint8_t i = 0; i < player_count; ++i) {
-        int y = 68 + i * 18;
-        gfx_SetColor(player_color(i));
-        gfx_FillRectangle(30,y,10,10);
-        char s[20];
-        s[0]='P'; s[1]='1'+i; s[2]=0;
-        text(48,y,gfx_RGBTo1555(240,240,245),s);
-        text(80,y,players[i].cpu ? gfx_RGBTo1555(160,170,185) : gfx_RGBTo1555(230,230,235),
-             players[i].cpu ? "CPU" : "HUMAN");
-        text(145,y,gfx_RGBTo1555(200,210,220),"DOMINOES:");
-        char c[4];
-        c[0]='0'+(players[i].count/10);
-        c[1]='0'+(players[i].count%10);
-        c[2]=0;
-        if (players[i].count < 10) { c[0]=c[1]; c[1]=0; }
-        text(220,y,gfx_RGBTo1555(255,220,70),c);
+    if(kb_IsDown(kb_Right)){
+        if(handSel+1<p[current].count) handSel++;
+        if(handSel>=handScroll+6) handScroll=handSel-5;
+        delay(100);
     }
-
-    centered(220,gfx_RGBTo1555(180,190,205),"ENTER = NEXT ROUND    CLEAR = MENU");
-}
-
-static void handle_setup(void) {
-    if (pressed(kb_KeyUp)) {
-        if (setup_field == 1) {
-            setup_cursor = (setup_cursor == 0) ? player_count - 1 : setup_cursor - 1;
+    if(kb_IsDown(kb_Up)){
+        if(target>0) target--; else target=players+1;
+        delay(100);
+    }
+    if(kb_IsDown(kb_Down)){
+        if(target<players+1) target++; else target=0;
+        delay(100);
+    }
+    if(kb_IsDown(kb_Graph)){
+        drawOne(current); delay(150);
+    }
+    if(kb_IsDown(kb_2nd) && p[current].count){
+        if(playableOnTarget(p[current].hand[handSel],target,current)){
+            playTile(current,handSel,target);
         }
-        wait_release();
-    } else if (pressed(kb_KeyDown)) {
-        if (setup_field == 1) setup_cursor = (setup_cursor + 1) % player_count;
-        wait_release();
-    } else if (pressed(kb_KeyLeft)) {
-        if (setup_field == 0) {
-            if (player_count > 2) player_count--;
-            if (setup_cursor >= player_count) setup_cursor = player_count - 1;
-        } else {
-            players[setup_cursor].cpu = !players[setup_cursor].cpu;
-        }
-        wait_release();
-    } else if (pressed(kb_KeyRight)) {
-        if (setup_field == 0) {
-            if (player_count < 8) player_count++;
-        } else {
-            players[setup_cursor].cpu = !players[setup_cursor].cpu;
-        }
-        wait_release();
-    } else if (pressed(kb_Key2nd)) {
-        setup_field = setup_field ? 0 : 1;
-        wait_release();
-    } else if (pressed(kb_KeyEnter)) {
-        start_round();
-        wait_release();
+        delay(130);
+    }
+    if(kb_IsDown(kb_Clear)){
+        if(!canPlayAny(current)){ p[current].open=true; current=(current+1)%players; handSel=0; handScroll=0; }
+        delay(130);
     }
 }
 
-static void human_turn(void) {
-    uint8_t p = turn;
-    if (forced_double) p = forced_player;
-
-    if (players[p].count == 0) return;
-    if (selected >= players[p].count) selected = players[p].count - 1;
-
-    if (pressed(kb_KeyRight)) {
-        selected = (selected + 1) % players[p].count;
-        wait_release();
-    } else if (pressed(kb_KeyLeft)) {
-        selected = (selected == 0) ? players[p].count - 1 : selected - 1;
-        wait_release();
-    } else if (pressed(kb_KeyDown)) {
-        target = (target + 1) % (2 + player_count);
-        wait_release();
-    } else if (pressed(kb_KeyUp)) {
-        target = (target == 0) ? (1 + player_count) : target - 1;
-        wait_release();
-    } else if (pressed(kb_KeyGraph)) {
-        if (!drawn_this_turn && pile_count && players[p].count < MAX_HAND) {
-            players[p].hand[players[p].count++] = draw_pile();
-            drawn_this_turn = true;
-            anim_kind = 4; anim_frame = 0; anim_max = 10;
-        } else {
-            set_message("CANNOT DRAW");
-        }
-        wait_release();
-    } else if (pressed(kb_KeyEnter)) {
-        if (play_tile(p,selected,target)) {
-            set_message("NICE PLAY");
-        } else {
-            set_message("ILLEGAL MOVE");
-        }
-        wait_release();
-    } else if (pressed(kb_KeyClear)) {
-        players[p].open = true;
-        drawn_this_turn = false;
-        forced_double = false;
-        turn = (p + 1) % player_count;
-        wait_release();
+static void drawScore(void){
+    gfx_FillScreen(gfx_RGBTo1555(18,22,32));
+    centerText(12,"ROUND COMPLETE",gfx_RGBTo1555(255,210,30));
+    for(uint8_t i=0;i<players;i++){
+        char s[32];
+        sprintf(s,"PLAYER %u    TILES LEFT: %u",i+1,p[i].count);
+        text(35,40+i*22,s,COLORS[i]);
     }
+    centerText(220,"2ND: NEW ROUND    CLEAR: SETUP",gfx_RGBTo1555(190,200,215));
 }
 
-static void update_animation(void) {
-    if (anim_frame < anim_max) anim_frame++;
-    else anim_kind = 0;
-    if (message_timer) message_timer--;
+static void checkEnd(void){
+    for(uint8_t i=0;i<players;i++) if(p[i].count==0) { gameOver=true; return; }
 }
 
-static void draw_animation_overlay(void) {
-    if (!anim_kind) return;
-    if (anim_kind == 2) {
-        int x = 140 + (anim_frame < anim_max/2 ? anim_frame*2 : (anim_max-anim_frame)*2);
-        gfx_SetColor(gfx_RGBTo1555(255,220,70));
-        gfx_FillCircle(x,110,3);
-    } else if (anim_kind == 4) {
-        gfx_SetColor(gfx_RGBTo1555(70,190,255));
-        gfx_FillCircle(260,205,4 + (anim_frame % 4));
-    } else if (anim_kind == 3) {
-        gfx_SetColor(gfx_RGBTo1555(255,100,100));
-        gfx_FillCircle(160,132,4 + (anim_frame % 3));
-    }
-}
-
-static void update(void) {
-    update_animation();
-
-    if (screen == SCREEN_SETUP) {
-        handle_setup();
-        return;
-    }
-
-    if (screen == SCREEN_SCORES) {
-        if (pressed(kb_KeyEnter)) {
-            round_no++;
-            start_round();
-            wait_release();
-        } else if (pressed(kb_KeyClear)) {
-            screen = SCREEN_SETUP;
-            wait_release();
-        }
-        return;
-    }
-
-    if (players[turn].cpu) {
-        cpu_turn();
-    } else {
-        human_turn();
-    }
-}
-
-static void draw(void) {
-    if (screen == SCREEN_SETUP) draw_setup();
-    else if (screen == SCREEN_GAME) {
-        draw_board();
-        draw_animation_overlay();
-    } else draw_scores();
-}
-
-int main(void) {
-    reset_players();
-
+int main(void){
     gfx_Begin();
     gfx_SetDrawBuffer();
-
-    while (1) {
-        update();
-        draw();
-        gfx_SwapDraw();
+    srand(12345);
+    for(uint8_t i=0;i<MAX_PLAYERS;i++){ p[i].cpu=(i!=0); p[i].open=false; p[i].score=0; }
+    while(1){
+        if(setup){
+            drawSetup(); gfx_SwapDraw(); setupKeys();
+        } else if(gameOver){
+            drawScore(); gfx_SwapDraw();
+            kb_Scan();
+            if(kb_IsDown(kb_Clear)){ setup=true; gameOver=false; current=0; delay(180); }
+            if(kb_IsDown(kb_2nd)){ roundNo++; gameOver=false; deal(); delay(180); }
+        } else {
+            checkEnd();
+            if(gameOver) continue;
+            drawGame(); gfx_SwapDraw(); gameKeys();
+        }
     }
-
     gfx_End();
     return 0;
 }
