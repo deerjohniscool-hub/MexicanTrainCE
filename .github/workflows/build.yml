@@ -1,0 +1,40 @@
+name: Build Mexican Train for TI-84 Plus CE
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download official CEdev nightly
+        run: |
+          curl -L --fail \
+            https://github.com/CE-Programming/toolchain/releases/download/nightly/CEdev-Linux-nightly.tar.gz \
+            -o CEdev.tar.gz
+          tar -xzf CEdev.tar.gz
+
+      - name: Add CEdev to PATH
+        run: |
+          echo "$GITHUB_WORKSPACE/CEdev/bin" >> "$GITHUB_PATH"
+          echo "$GITHUB_WORKSPACE/CEdev/binutils/bin" >> "$GITHUB_PATH"
+
+      - name: Verify toolchain
+        run: |
+          cedev-config --version || true
+          ez80-clang --version
+
+      - name: Build .8xp
+        run: make
+
+      - name: Upload calculator program
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mexican-Train-8XP
+          path: bin/*.8xp
+          if-no-files-found: error
